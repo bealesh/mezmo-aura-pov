@@ -1,0 +1,17 @@
+# docker-compose.override.yml
+# Local development overrides — not committed with sensitive values.
+# This file is gitignored. Copy and customize as needed.
+
+services:
+  aura:
+    environment:
+      RUST_LOG: "debug,aura=trace,aura_config=trace"
+    # Mount config live for fast iteration during demo prep:
+    volumes:
+      - ./configs/aura/config.toml:/app/config/config.toml:ro
+
+  mcp-prometheus:
+    environment:
+      # Uncomment to point at a remote Prometheus for integration testing:
+      # PROMETHEUS_URL: "http://your-prometheus.example.com"
+      LOG_LEVEL: "debug"

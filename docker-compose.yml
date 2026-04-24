@@ -1,0 +1,112 @@
+name: mezmo-aura-pov
+
+# Joins the network created by `cd otel-demo && docker compose up -d`.
+# All container names from that stack (prometheus, grafana, flagd, etc.)
+# resolve here by name on the shared opentelemetry-demo bridge.
+
+networks:
+  otel-demo:
+    external: true
+    name: opentelemetry-demo
+
+volumes:
+  open-webui-data:
+
+services:
+
+  # ── Mezmo Aura ──────────────────────────────────────────────────────────────
+  aura:
+    build:
+      context: ./build/aura
+      dockerfile: Dockerfile
+    container_name: aura
+    restart: unless-stopped
+    ports:
+      - "${AURA_PORT:-3030}:3030"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3030"
+      CONFIG_PATH: "/app/config/config.toml"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      RUST_LOG: "info,aura=debug"
+    volumes:
+      - ./configs/aura/config.toml:/app/config/config.toml:ro
+    depends_on:
+      mcp-prometheus:
+        condition: service_healthy
+    networks:
+      - otel-demo
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3030/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ── Prometheus MCP Server ───────────────────────────────────────────────────
+  mcp-prometheus:
+    build:
+      context: ./build/mcp-prometheus
+      dockerfile: Dockerfile
+    container_name: mcp-prometheus
+    restart: unless-stopped
+    ports:
+      - "${MCP_PROMETHEUS_PORT:-8082}:8082"
+    environment:
+      PROMETHEUS_URL: "http://prometheus:9090"
+    networks:
+      - otel-demo
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8082/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Docker Ops MCP Server (stretch goal — remediation) ─────────────────────
+  mcp-docker:
+    build:
+      context: ./build/mcp-docker
+      dockerfile: Dockerfile
+    container_name: mcp-docker
+    restart: unless-stopped
+    profiles: ["stretch"]
+    ports:
+      - "${MCP_DOCKER_PORT:-8083}:8083"
+    environment:
+      OTEL_DEMO_PROJECT_DIR: "/workspace/otel-demo"
+      COMPOSE_PROJECT_NAME: "otel-demo"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./otel-demo:/workspace/otel-demo:ro
+    networks:
+      - otel-demo
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8083/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Open WebUI — single-pane-of-glass UI (stretch goal) ────────────────────
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    profiles: ["stretch"]
+    ports:
+      - "${OPENWEBUI_PORT:-8081}:8080"
+    environment:
+      # Point Open WebUI at Aura's OpenAI-compatible API
+      OPENAI_API_BASE_URL: "http://aura:3030/v1"
+      OPENAI_API_KEY: "aura-no-auth-required"
+      WEBUI_AUTH: "false"
+      DEFAULT_MODELS: "aura-observability"
+    volumes:
+      - open-webui-data:/app/backend/data
+    depends_on:
+      aura:
+        condition: service_healthy
+    networks:
+      - otel-demo

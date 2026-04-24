@@ -1,0 +1,10 @@
+Based on your investigation, the paymentservice container appears to be crash-looping or in a degraded state.
+
+Please:
+1. Confirm the current container status for paymentservice using your Docker tools
+2. Check its recent logs for any error messages
+3. Restart the paymentservice container
+4. After restart, verify the error rate in Prometheus drops back to baseline
+5. Confirm the incident is resolved and give me the before/after error rate numbers
+
+I authorize you to execute the restart.

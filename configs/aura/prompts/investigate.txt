@@ -1,0 +1,10 @@
+Our checkout pipeline is reporting elevated error rates. On-call was just paged.
+
+Please investigate what's happening right now:
+1. Which services have the highest error rates in the last 5 minutes?
+2. What are the P95 latencies for checkoutservice and paymentservice?
+3. Is this a payment processing issue, a downstream dependency failure, or something upstream?
+4. How long has this been happening — when did the error rate first spike?
+5. What is your root cause assessment and what should we do first?
+
+Use your Prometheus tools to pull live data before answering. Show me the numbers.

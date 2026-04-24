@@ -1,0 +1,13 @@
+# Environment — never commit secrets
+.env
+
+# Cloned upstream repos
+otel-demo/
+
+# Demo artifacts (screenshots, recordings)
+artifacts/screenshots/*.json
+artifacts/screenshots/*.png
+artifacts/recordings/
+
+# OS
+.DS_Store
