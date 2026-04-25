@@ -5,9 +5,13 @@ set -euo pipefail
 TIMEOUT=${TIMEOUT:-300}   # seconds
 INTERVAL=5
 
-PROMETHEUS_URL="${PROMETHEUS_PORT:-9090}"
 AURA_URL="http://localhost:${AURA_PORT:-3030}"
 FRONTEND_URL="http://localhost:${FRONTEND_PORT:-8080}"
+
+# OTel demo maps Grafana to a dynamic host port — look it up rather than hardcoding
+grafana_port() {
+    docker port grafana 3000 2>/dev/null | awk -F: '{print $NF}' | tr -d '[:space:]'
+}
 
 start=$(date +%s)
 
@@ -35,8 +39,9 @@ echo "╚═══════════════════════�
 
 # OTel Demo services
 wait_for "Prometheus"   "http://localhost:${PROMETHEUS_PORT:-9090}/-/ready"
-wait_for "Grafana"      "http://localhost:${GRAFANA_PORT:-3000}/api/health"
 wait_for "Frontend"     "${FRONTEND_URL}"
+GPORT=$(grafana_port)
+wait_for "Grafana"      "http://localhost:${GPORT}/api/health"
 
 # Our services
 wait_for "Aura"         "${AURA_URL}/health"

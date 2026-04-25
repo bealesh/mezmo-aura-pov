@@ -41,12 +41,12 @@ check_http "MCP-Prometheus /health" "http://localhost:${MCP_PROMETHEUS_PORT:-808
 
 echo ""
 echo "── Data Validation ────────────────────────"
-# Prometheus has live metric data (not empty)
-prom_result=$(curl -sf "http://localhost:${PROMETHEUS_PORT:-9090}/api/v1/query?query=up" 2>/dev/null)
-if echo "$prom_result" | grep -q '"result":\['; then
-    ok "Prometheus returning live metrics"
+# Prometheus has live OTLP metric data (OTel demo is push-based, no scrape targets)
+prom_result=$(curl -sf "http://localhost:${PROMETHEUS_PORT:-9090}/api/v1/query?query=http_server_request_duration_seconds_count" 2>/dev/null)
+if echo "$prom_result" | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d['data']['result'])>0" 2>/dev/null; then
+    ok "Prometheus receiving live OTLP metrics"
 else
-    fail "Prometheus result set is empty"
+    fail "Prometheus has no OTLP metrics yet (services may still be warming up)"
 fi
 
 # Aura lists at least one agent model

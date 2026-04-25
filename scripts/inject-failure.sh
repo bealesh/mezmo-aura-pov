@@ -27,7 +27,7 @@ echo "════════════════════════�
 # Atomically update the flagd JSON
 tmp=$(mktemp)
 jq '
-  .flags.paymentFailure.defaultVariant    = "on" |
+  .flags.paymentFailure.defaultVariant    = "100%" |
   .flags.paymentUnreachable.defaultVariant = "on" |
   .flags.cartFailure.defaultVariant       = "on"
 ' "$FLAGD_JSON" > "$tmp" && mv "$tmp" "$FLAGD_JSON"

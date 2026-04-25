@@ -22,7 +22,7 @@ echo "════════════════════════�
 
 tmp=$(mktemp)
 jq '
-  .flags.paymentFailure.defaultVariant = "on"
+  .flags.paymentFailure.defaultVariant = "50%"
 ' "$FLAGD_JSON" > "$tmp" && mv "$tmp" "$FLAGD_JSON"
 
 echo "✓ Flags updated"

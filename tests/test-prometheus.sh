@@ -27,30 +27,29 @@ echo "── Prometheus Tests ────────────────�
 curl -sf "${PROM}/-/ready" > /dev/null 2>&1 && ok "Prometheus /ready" || { fail "Prometheus /ready"; exit 1; }
 curl -sf "${PROM}/-/healthy" > /dev/null 2>&1 && ok "Prometheus /healthy" || fail "Prometheus /healthy"
 
-# Core OTel metrics are being scraped
+# OTel demo uses OTLP push — no scrape targets, check for pushed metrics instead
 for metric in \
-    "up" \
     "http_server_request_duration_seconds_count" \
-    "process_cpu_seconds_total"; do
+    "rpc_server_duration_milliseconds_count"; do
     if prom_query "$metric" 2>/dev/null | has_data 2>/dev/null; then
-        ok "Metric available: $metric"
+        ok "OTLP metric flowing: $metric"
     else
-        fail "Metric missing: $metric (OTel Demo may still be starting)"
+        fail "OTLP metric missing: $metric (services may still be warming up)"
     fi
 done
 
-# At least 5 targets are up
-targets=$(curl -sf "${PROM}/api/v1/targets" 2>/dev/null)
-up_count=$(echo "$targets" | python3 -c "
+# Confirm at least 3 distinct service_name values are present across all metrics
+service_count=$(curl -sf "${PROM}/api/v1/label/service_name/values" \
+    2>/dev/null | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
-print(sum(1 for t in d['data']['activeTargets'] if t['health']=='up'))
+print(len(d.get('data', [])))
 " 2>/dev/null || echo 0)
 
-if (( up_count >= 5 )); then
-    ok "Active scrape targets: $up_count"
+if (( service_count >= 3 )); then
+    ok "Services reporting HTTP metrics: $service_count"
 else
-    fail "Too few active targets: $up_count (expected ≥5)"
+    fail "Too few services reporting HTTP metrics: $service_count (expected ≥3, demo may still be warming up)"
 fi
 
 echo "  Results: $PASS passed, $FAIL failed"

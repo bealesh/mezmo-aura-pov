@@ -26,7 +26,7 @@ echo "AURA RESPONSE:"
 echo "────────────────────────────────────────────────────────────────"
 
 # Stream the response — delta content chunks are printed as they arrive
-curl -sN \
+curl -sN --max-time 120 \
   -X POST "${AURA_URL}/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -d "$(jq -n \

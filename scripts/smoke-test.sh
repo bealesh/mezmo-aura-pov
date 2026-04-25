@@ -6,6 +6,8 @@ set -euo pipefail
 PROM="http://localhost:${PROMETHEUS_PORT:-9090}"
 AURA="http://localhost:${AURA_PORT:-3030}"
 MCP_PROM="http://localhost:${MCP_PROMETHEUS_PORT:-8082}"
+GRAFANA_PORT_ACTUAL=$(docker port grafana 3000 2>/dev/null | cut -d: -f2 | tr -d '[:space:]')
+GRAFANA="http://localhost:${GRAFANA_PORT_ACTUAL}"
 
 pass=0
 fail=0
@@ -29,7 +31,7 @@ check "Prometheus query"    "curl -sf '${PROM}/api/v1/query?query=up' | grep -q 
 check "Aura /health"        "curl -sf ${AURA}/health"
 check "Aura /v1/models"     "curl -sf ${AURA}/v1/models | grep -q 'aura'"
 check "MCP-Prometheus /health" "curl -sf ${MCP_PROM}/health | grep -q '\"status\"'"
-check "Grafana /api/health" "curl -sf http://localhost:${GRAFANA_PORT:-3000}/api/health | grep -q 'ok'"
+check "Grafana /api/health" "curl -sf ${GRAFANA}/api/health | grep -q 'ok'"
 check "Frontend reachable"  "curl -sf http://localhost:${FRONTEND_PORT:-8080} -o /dev/null"
 
 echo ""

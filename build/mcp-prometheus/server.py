@@ -5,16 +5,14 @@ Exposes Prometheus query tools over MCP Streamable HTTP transport.
 
 import os
 import json
-import time
 import logging
-from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
+import uvicorn
 from fastmcp import FastMCP
 from fastmcp.server.http import create_streamable_http_app
-import uvicorn
-from starlette.applications import Starlette
+from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
@@ -28,7 +26,7 @@ mcp = FastMCP(
     instructions=(
         "Query live metrics from the OpenTelemetry Demo's Prometheus instance. "
         "Use query() for instant snapshots and query_range() for time-series analysis. "
-        "When investigating incidents, start with error rates then drill into latency."
+        "When investigating incidents, start with top_error_services() then drill into latency."
     ),
 )
 
@@ -48,7 +46,6 @@ async def query(promql: str, time_rfc3339: Optional[str] = None) -> str:
         promql: A valid PromQL expression. Examples:
             - rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m])
             - histogram_quantile(0.95, rate(http_server_request_duration_seconds_bucket[5m]))
-            - up
         time_rfc3339: Optional evaluation time in RFC3339 format. Defaults to now.
     """
     params = {"query": promql}
@@ -107,7 +104,6 @@ async def get_alerts() -> str:
 async def get_targets() -> str:
     """Return Prometheus scrape target health — shows which services are up/down."""
     result = await _prom_get("/api/v1/targets", {"state": "any"})
-    # Trim to essentials to avoid overwhelming the LLM context
     targets = result.get("data", {}).get("activeTargets", [])
     summary = [
         {
@@ -115,7 +111,6 @@ async def get_targets() -> str:
             "instance": t.get("labels", {}).get("instance"),
             "health": t.get("health"),
             "lastError": t.get("lastError") or None,
-            "lastScrape": t.get("lastScrape"),
         }
         for t in targets
     ]
@@ -123,33 +118,47 @@ async def get_targets() -> str:
 
 
 @mcp.tool()
-async def top_error_services(window: str = "5m", threshold: float = 0.01) -> str:
-    """Find services with the highest HTTP 5xx error rates.
+async def top_error_services(window: str = "5m", threshold: float = 0.005) -> str:
+    """Find services with the highest error rates.
+
+    Uses span-derived error metrics (traces_span_metrics_calls_total) which cover ALL OTel Demo
+    services uniformly. Also includes per-span breakdown to help identify root cause vs. cascades.
 
     Args:
         window: Time window for rate calculation, e.g. "5m", "15m".
-        threshold: Minimum error rate to include (requests/sec). Default 0.01.
+        threshold: Minimum error rate to include (errors/sec). Default 0.005.
     """
-    promql = (
-        f"sort_desc("
-        f"sum by (service_name) ("
-        f"rate(http_server_request_duration_seconds_count"
-        f"{{http_response_status_code=~\"5..\"}}[{window}])"
-        f"))"
+    # Primary: span-level errors — covers all services, includes span name for root cause analysis
+    span_promql = (
+        f"sort_desc(sum by (service_name, span_name) ("
+        f"rate(traces_span_metrics_calls_total"
+        f"{{status_code=\"STATUS_CODE_ERROR\"}}[{window}])))"
     )
-    result = await _prom_get("/api/v1/query", {"query": promql})
+    result = await _prom_get("/api/v1/query", {"query": span_promql})
     vectors = result.get("data", {}).get("result", [])
-    hits = [
-        {
+
+    hits: list[dict] = []
+    for v in vectors:
+        rate_val = float(v["value"][1])
+        if rate_val < threshold:
+            continue
+        hits.append({
             "service": v["metric"].get("service_name", "unknown"),
-            "error_rate_per_sec": round(float(v["value"][1]), 4),
-        }
-        for v in vectors
-        if float(v["value"][1]) >= threshold
-    ]
+            "span": v["metric"].get("span_name", "unknown"),
+            "error_rate_per_sec": round(rate_val, 5),
+        })
+
     if not hits:
-        return f"No services exceed error threshold {threshold} req/s in the last {window}."
-    return json.dumps(hits, indent=2)
+        return f"No services exceed error threshold {threshold} errors/sec in the last {window}."
+
+    output = {
+        "errors_by_span": hits,
+        "note": (
+            "Look for the most upstream span that errors — that is the root cause. "
+            "Downstream services cascade from there."
+        ),
+    }
+    return json.dumps(output, indent=2)
 
 
 @mcp.tool()
@@ -157,17 +166,15 @@ async def service_latency_percentiles(service_name: str, window: str = "5m") -> 
     """Get P50/P95/P99 request latency for a named service.
 
     Args:
-        service_name: Exact service_name label value, e.g. "checkoutservice".
+        service_name: Exact service_name label value, e.g. "checkout".
         window: Time window for histogram calculation, e.g. "5m".
     """
     results = {}
     for pct, quantile in [("p50", "0.5"), ("p95", "0.95"), ("p99", "0.99")]:
         promql = (
-            f"histogram_quantile({quantile}, "
-            f"sum by (le) ("
+            f"histogram_quantile({quantile}, sum by (le) ("
             f"rate(http_server_request_duration_seconds_bucket"
-            f"{{service_name=\"{service_name}\"}}[{window}])"
-            f"))"
+            f"{{service_name=\"{service_name}\"}}[{window}])))"
         )
         r = await _prom_get("/api/v1/query", {"query": promql})
         vecs = r.get("data", {}).get("result", [])
@@ -182,30 +189,27 @@ async def service_latency_percentiles(service_name: str, window: str = "5m") -> 
     return json.dumps(results, indent=2)
 
 
-# ── Health endpoint (not part of MCP, just for Docker healthcheck) ────────────
+# ── Health endpoint ───────────────────────────────────────────────────────────
 
-async def health(request):
+async def health(request: Request) -> JSONResponse:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(f"{PROMETHEUS_URL}/-/healthy")
             prom_ok = r.status_code == 200
     except Exception:
         prom_ok = False
-    status = "ok" if prom_ok else "degraded"
-    return JSONResponse({"status": status, "prometheus_reachable": prom_ok})
-
-
-def build_app():
-    mcp_app = create_streamable_http_app(mcp, streamable_http_path="/mcp", stateless_http=True)
-    health_route = Route("/health", health)
-
-    app = Starlette(
-        routes=[health_route] + list(mcp_app.routes),
-    )
-    return app
+    return JSONResponse({"status": "ok" if prom_ok else "degraded", "prometheus_reachable": prom_ok})
 
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8082"))
     log.info("Starting Prometheus MCP server on :%d (PROMETHEUS_URL=%s)", port, PROMETHEUS_URL)
-    uvicorn.run(build_app(), host="0.0.0.0", port=port, log_level="info")
+
+    app = create_streamable_http_app(
+        mcp,
+        streamable_http_path="/mcp",
+        stateless_http=True,
+        routes=[Route("/health", health, methods=["GET"])],
+    )
+
+    uvicorn.run(app, host="0.0.0.0", port=port, lifespan="on", log_level="info")

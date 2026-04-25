@@ -23,7 +23,7 @@ echo "════════════════════════�
 tmp=$(mktemp)
 jq '
   .flags.kafkaQueueProblems.defaultVariant = "on" |
-  .flags.imageSlowLoad.defaultVariant      = "on"
+  .flags.imageSlowLoad.defaultVariant      = "10sec"
 ' "$FLAGD_JSON" > "$tmp" && mv "$tmp" "$FLAGD_JSON"
 
 echo "✓ Flags updated"
