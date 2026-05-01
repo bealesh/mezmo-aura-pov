@@ -36,11 +36,12 @@ if command -v npx &>/dev/null; then
         "frontend:${FRONTEND_PORT:-8080}:Frontend"; do
 
         IFS=: read -r svc port label <<< "$page"
+        label_lower=$(echo "$label" | tr '[:upper:]' '[:lower:]')
         npx --yes puppeteer screenshot \
             "http://localhost:${port}" \
-            "${SCREENSHOTS}/${label,,}-${TS}.png" \
+            "${SCREENSHOTS}/${label_lower}-${TS}.png" \
             --viewport "1920x1080" 2>/dev/null \
-            && echo "    ✓ ${label,,}-${TS}.png" \
+            && echo "    ✓ ${label_lower}-${TS}.png" \
             || echo "    ⚠ Could not screenshot ${label} (puppeteer may not be available)"
     done
 else
