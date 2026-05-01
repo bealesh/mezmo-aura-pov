@@ -10,7 +10,7 @@ FRONTEND_URL="http://localhost:${FRONTEND_PORT:-8080}"
 
 # OTel demo maps Grafana to a dynamic host port — look it up rather than hardcoding
 grafana_port() {
-    docker port grafana 3000 2>/dev/null | awk -F: '{print $NF}' | tr -d '[:space:]'
+    docker port grafana 3000 2>/dev/null | head -1 | awk -F: '{print $NF}' | tr -d '[:space:]'
 }
 
 start=$(date +%s)

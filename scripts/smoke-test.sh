@@ -6,7 +6,7 @@ set -euo pipefail
 PROM="http://localhost:${PROMETHEUS_PORT:-9090}"
 AURA="http://localhost:${AURA_PORT:-3030}"
 MCP_PROM="http://localhost:${MCP_PROMETHEUS_PORT:-8082}"
-GRAFANA_PORT_ACTUAL=$(docker port grafana 3000 2>/dev/null | cut -d: -f2 | tr -d '[:space:]')
+GRAFANA_PORT_ACTUAL=$(docker port grafana 3000 2>/dev/null | head -1 | cut -d: -f2 | tr -d '[:space:]')
 GRAFANA="http://localhost:${GRAFANA_PORT_ACTUAL}"
 
 pass=0
